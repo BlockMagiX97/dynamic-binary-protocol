@@ -1,0 +1,9 @@
+1.	add struct auto-gen functions					done
+2.	make dumb server and cient capable of comunication		done
+3.	make proper server (test using dumb client)
+3.b		rewrite
+4.	setup the server on rasberry pi
+5.	make proper clinet for dwm
+6.	add client to android
+7.	add web clinet
+8.	(maybe) add native windows clinet
