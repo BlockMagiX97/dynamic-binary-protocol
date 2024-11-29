@@ -22,20 +22,26 @@ int main(int argc, char**argv) {
 	}
 	
 	struct format_mask_t* mask = malloc_mask();
-	struct redir_table* redir = NULL;
-	generate_format_from_server(sockfd, mask, &redir);
+	struct redir_table_t* redir = malloc_redir_table();
+	printf("generate_format_from_server: %d\n",generate_format_from_server(sockfd, redir));
+	struct struct1 a = {
+		.x = 88,
+		.y = 'H'
+	};
+	send_struct_client(sockfd,STRUCT_STRUCT1, &a, redir);
+	struct struct1 b;
+	recv_struct_client(sockfd,STRUCT_STRUCT1, &b, redir);
+	printf("x: %d, y: %c\n",b.x,b.y);
 	for(int i=0;i<global_format.num_of_structs;i++) {
-		printf("%d\n", redir->struct_remap[i]);
+		printf("%u\n", redir->struct_remap[i]);
+		if (redir->struct_remap[i] == UINT32_MAX) {
+			// skip because redir->field_remap[i] == NULL
+			continue;
+		}
 		for (int j=0;j<global_format.struct_info[i].num_of_fields;j++) {
 			printf("\t%d\n", redir->field_remap[i][j]);
 		}
 	}
-	
-
-
 	close(sockfd);
-	
 	return 0;
-
-	
 }
