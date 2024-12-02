@@ -10,8 +10,10 @@
 #define PROTOCOL_H
 
 struct field_info_t {
-  uint8_t essential;
   uint8_t size;
+  uint8_t essential;
+  uint8_t is_ptr;
+  const char *type;
   const char *identifier;
 };
 struct struct_info_t {
@@ -67,41 +69,58 @@ struct redir_table_t {
 
 //	_F(MACRO_NAME, type_name, essential(1 means yes))
 #define STRUCTS(_F, ...)                                                       \
-  _F(STRUCT1, "STRUCT1", struct1, 1)                                           \
   _F(STRUCT2, "STRUCT2", struct2, 0)                                           \
+  _F(STRUCT1, "STRUCT1", struct1, 1)                                           \
 
-//	_F(field_name, type, indentifier, essential, size)
+//	_F(field_name, type, ptr, indentifier, essential, size of (one) member)
 #define STRUCT1_FIELDS(_F, ...)                                                \
-  _F(x, int, "x", 0, sizeof(int)) \
-  _F(y, char, "y", 1, sizeof(char)) \
+  _F(y, char*, PTR, "y", 1, sizeof(char)) \
+  _F(x, uint32_t ,NORMAL, "x", 0, 4)\
 
 #define STRUCT2_FIELDS(_F, ...) \
-  _F(z, char, "z", 1, 1)
+  _F(z, char, NORMAL, "z", 1, 1)
 
-#define MAKE_STRUCT_FIELD_DEF(field_name, type, id, essential, size)           \
+#define MAKE_STRUCT_FIELD_DEF_NORMAL(field_name, type) \
   type field_name;
+
+#define MAKE_STRUCT_FIELD_DEF_PTR(field_name, type)   \
+  uint32_t nmemb_##field_name;                        \
+  type field_name;
+
+#define MAKE_STRUCT_FIELD_DEF(field_name, type,ptr, id, essential, size)       \
+  MAKE_STRUCT_FIELD_DEF_##ptr(field_name, type)
+
 #define MAKE_STRUCT_DEF(macro, id, type_name, essential)                       \
   struct type_name {                                                           \
     macro##_FIELDS(MAKE_STRUCT_FIELD_DEF)                                      \
   };
 
-#define MAKE_FIELD_DEFS(field_name, type, id, essential_num, size_num)         \
-  global_format.struct_info[iterator].field_info[field_iterator].essential =   \
-      essential_num;                                                           \
-  global_format.struct_info[iterator].field_info[field_iterator].size =        \
-      size_num;                                                                \
-  global_format.struct_info[iterator].field_info[field_iterator].identifier =  \
-      id;                                                                      \
+
+
+#define MAKE_FIELD_DEFS_NORMAL(field_name, type_char,id, essential_num, size_num)              \
+  global_format.struct_info[iterator].field_info[field_iterator].essential = essential_num; \
+  global_format.struct_info[iterator].field_info[field_iterator].size = size_num;           \
+  global_format.struct_info[iterator].field_info[field_iterator].is_ptr = 0;                \
+  global_format.struct_info[iterator].field_info[field_iterator].type = #type_char ;        \
+  global_format.struct_info[iterator].field_info[field_iterator].identifier =id;            \
   field_iterator++;
+
+#define MAKE_FIELD_DEFS_PTR(field_name, type_char,id, essential_num, size_num)              \
+  global_format.struct_info[iterator].field_info[field_iterator].essential = essential_num; \
+  global_format.struct_info[iterator].field_info[field_iterator].size = size_num;           \
+  global_format.struct_info[iterator].field_info[field_iterator].is_ptr = 1;                \
+  global_format.struct_info[iterator].field_info[field_iterator].type = #type_char ;        \
+  global_format.struct_info[iterator].field_info[field_iterator].identifier =id;            \
+  field_iterator++;
+
+#define MAKE_FIELD_DEFS(field_name, type_char,ptr, id, essential_num, size_num)              \
+  MAKE_FIELD_DEFS_##ptr(field_name, type_char,id, essential_num, size_num)
 
 #define MAKE_STRUCT_DEFS(macro, id, type_name, essential_num)                  \
   COUNT(global_format.struct_info[iterator].num_of_fields, macro##_FIELDS);    \
   global_format.struct_info[iterator].identifier = id;                         \
   global_format.struct_info[iterator].essential = essential_num;               \
-  global_format.struct_info[iterator].field_info =                             \
-      (struct field_info_t *)malloc(                                           \
-          sizeof(struct field_info_t) *                                        \
-          global_format.struct_info[iterator].num_of_fields);                  \
+  global_format.struct_info[iterator].field_info = (struct field_info_t *)malloc(sizeof(struct field_info_t) * global_format.struct_info[iterator].num_of_fields); \
   if (global_format.struct_info[iterator].field_info == NULL) {                \
     perror("malloc");                                                          \
     return -1;                                                                 \
@@ -118,9 +137,28 @@ struct redir_table_t {
     void *array[] = {macro##_FIELDS(__MAKE_SUB_GET_FIELD)};                    \
     return array[field_id];                                                    \
   }
-
 #define MAKE_FUNCTION_POINTERS_SUB_GET(macro, id, type_name, essential)        \
   &_get_field_##macro,
+
+
+
+#define __MAKE_SUB_GET_NMEMB_FIELD_PTR(field_name) &(temp->nmemb_##field_name),
+#define __MAKE_SUB_GET_NMEMB_FIELD_NORMAL(field_name) NULL,
+
+#define __MAKE_SUB_GET_NMEMB_FIELD(field_name, type, ptr, ...) \
+  __MAKE_SUB_GET_NMEMB_FIELD_##ptr(field_name)
+
+#define MAKE_SUB_GET_NMEMB_FIELD(macro, id, type_name, essential)                    \
+  void *_get_field_nmemb_##macro(void *object, uint32_t field_id) {                  \
+    struct type_name *temp = (struct type_name *)object;                       \
+    void *array[] = {macro##_FIELDS(__MAKE_SUB_GET_NMEMB_FIELD)};                    \
+    return array[field_id];                                                    \
+  }
+
+#define MAKE_FUNCTION_POINTERS_SUB_GET_NMEMB(macro, ...) \
+  &_get_field_nmemb_##macro,
+
+
 #define MAKE_ENUM_DEF(macro, id, typename, essential) STRUCT_##macro,
 
 enum structs {STRUCT_ANY=-1,STRUCTS(MAKE_ENUM_DEF) };

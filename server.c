@@ -16,6 +16,7 @@
 
 void* handle_client(void* arg) {
 	int client_fd = *((int*)arg);
+	FILE* fptr = fopen("server.log", "wb");
 
 	struct format_mask_t* mask = malloc_mask();
 	if (mask == NULL) {
@@ -43,13 +44,18 @@ void* handle_client(void* arg) {
 
 	struct struct1 a = {
 		.x = 12,
-		.y = 'A'
+		.nmemb_y = 9,
+		.y = "Pavel th",
 	};
+	
+	fclose(fptr);
 	send_struct_server(client_fd,STRUCT_STRUCT1, &a, mask);
 
 	struct struct1 b;
+	DEBUG_PRINT;
 	recv_struct_server(client_fd,STRUCT_STRUCT1,&b, mask);
-	printf("x: %d, y: %c\n",b.x,b.y);
+	DEBUG_PRINT;
+	printf("x: %d, nmemb_y: %u, y: %s\n",b.x,b.nmemb_y,b.y);
 	
 	
 	free_mask(mask);
