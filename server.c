@@ -81,12 +81,6 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 
-	struct struct1 a;
-	a.x = 1;
-	a.y = 'H';
-	struct struct2 b;
-	b.z = 'H';
-	printf("x: %d; y: %c; z: %c\n", *((int*)get_field(STRUCT_STRUCT1, &a, 0)), *((char*)get_field(STRUCT_STRUCT1, &a, 1)), *((char*)get_field(STRUCT_STRUCT2, &b, 0)));
 	struct sockaddr_in address;
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
@@ -103,7 +97,7 @@ int main(int argc, char** argv) {
 	}
 
 	while(1) {
-		struct sockaddr_in client_addr;
+		struct sockaddr client_addr;
 
 		int cilent_addr_len = sizeof(client_addr);
 
