@@ -1,4 +1,4 @@
-CFLAGS := -g -O0
+CFLAGS := -g -O0 -Wno-error
 
 all: server.elf client.elf
 

@@ -37,8 +37,8 @@ int main(int argc, char**argv) {
 	}
 	struct struct1 a = {
 		.x = 2,
-		.nmemb_y = 7,
-		.y = "e Crow"
+		.nmemb_y = 17,
+		.y = "Pavel the Yapper"
 	};
 	DEBUG_PRINT;
 
