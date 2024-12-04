@@ -1,4 +1,29 @@
 #include "protocol.h"
+#include <endian.h>
+#if defined (__BYTE_ORDER__)
+#if (__BYTE_ORDER__ == __LITTLE_ENDIAN)
+int byte_swap(void *data, size_t size) {
+	uint8_t* p1 = data;
+	uint8_t* p2 = malloc(size);
+	if (p2 == NULL) {
+		return 1;
+	}
+	memcpy(p2,p1,size);
+	for (int i=0;i<size;i++) {
+		p1[i] = p2[size-i-1];
+	}
+	return 0;
+}
+#else 
+int byte_swap(void *data, size_t size) {
+  return 0;
+}
+#endif
+
+#else
+#error "Cannot detect system endianness"
+#endif
+
 
 struct format_t global_format;
 // wrappers for implementing TLS
@@ -89,7 +114,6 @@ int send_format_to_server(int fd) {
 				printf("Error while sending null terminator to server\n");
 				return -5;
 			}
-			printf("essential=%d ; size=%d\n", global_format.struct_info[i].field_info[j].essential, global_format.struct_info[i].field_info[j].size );
 			if (send_data(fd, global_format.struct_info[i].field_info[j].identifier, strlen(global_format.struct_info[i].field_info[j].identifier)) != strlen(global_format.struct_info[i].field_info[j].identifier)) {
 				printf("Error while sending field name to server\n");
 				return -9;
@@ -177,7 +201,6 @@ int32_t generate_mask_from_client(int fd, struct format_mask_t* mask) {
 	num_of_structs = ntohl(num_of_structs);
 
 	for (int i=0;i<num_of_structs;i++) {
-		printf("i=%d\n", i);
 		uint32_t size=0;
 		if ((err = recv_data(fd, &size, 4)) != 4) {
 			printf("Error reciving packet_size: %d\n", err);
@@ -195,9 +218,6 @@ int32_t generate_mask_from_client(int fd, struct format_mask_t* mask) {
 			free(data);
 			return -6;
 		}
-		FILE* fptr = fopen("./log_recv_data", "w");
-		fwrite(data, 1, size, fptr);
-		fclose(fptr);
 		uint32_t iter=0;
 
 		uint8_t is_essential=0;
@@ -222,7 +242,6 @@ int32_t generate_mask_from_client(int fd, struct format_mask_t* mask) {
 
 					uint8_t field_size=0;
 					READ_SAFE_FORMAT(field_size, iter, size, data,free(data);,"field")
-					printf("essential=%d ; size=%d\n", essential, field_size);
 
 					size_t field_type_len = strnlen((const char*) data+iter, size-iter);
 					if (size-iter == field_type_len) {
@@ -282,7 +301,6 @@ int32_t generate_mask_from_client(int fd, struct format_mask_t* mask) {
 				struct_exists = 1;
 			}
 
-			printf("struct %s:%s:essential: %u\n",global_format.struct_info[i].identifier, global_format.struct_info[i].field_info[j].identifier, global_format.struct_info[i].field_info[j].essential);
 
 			if (global_format.struct_info[i].field_info[j].essential == 1 && mask->struct_mask[i].field_mask[j] == 0) {
 				printf("Essential field not supported by client\n");
@@ -311,11 +329,9 @@ int send_format_to_client(int fd, struct format_mask_t* mask, int32_t num_of_str
 	if (num_of_structs < 0) {
 		return num_of_structs;
 	}
-	DEBUG_PRINT;
 	for (uint32_t i=0;i<global_format.num_of_structs;i++) {
 		uint32_t size=0;
 		if (mask->struct_mask[i].field_mask != NULL) {
-			DEBUG_PRINT;
 			size+=strlen(global_format.struct_info[i].identifier); // struct_name
 			size++; // null terminator
 			size+=sizeof(uint32_t); // struct_identifier
@@ -326,43 +342,36 @@ int send_format_to_client(int fd, struct format_mask_t* mask, int32_t num_of_str
 					size++; // null terminator
 				}
 			}
-			printf("send format size: %u\n", size);
 			size = htonl(size);
 			if (send_data(fd, &size, 4) != 4) {
 				perror("send_size");
 				return -6;
 			}
 			
-			DEBUG_PRINT;
 			if (send_data(fd, global_format.struct_info[i].identifier, strlen(global_format.struct_info[i].identifier)) !=strlen(global_format.struct_info[i].identifier)) {
 				perror("send_struct_name");
 				return -6;
 			}
-			DEBUG_PRINT;
 			char null_terminator = '\0';
 			if (send_data(fd, &null_terminator, 1) != 1) {
 				perror("send_null_terminator");
 				return -6;
 			}
-			DEBUG_PRINT;
 			uint32_t i_net = htonl(i);
 			if (send_data(fd, &i_net, 4) != 4) {
 				perror("send_struct_identifier");
 				return -6;
 			}
-			DEBUG_PRINT;
 			for(int j=0;j<global_format.struct_info[i].num_of_fields;j++) {
 				if (mask->struct_mask[i].field_mask[j] != 0) {
 					if (send_data(fd, mask->struct_mask[i].field_mask+j, 1) != 1) {
 						perror("send_field_size");
 						return -6;
 					}
-					DEBUG_PRINT;
 					if (send_data(fd, global_format.struct_info[i].field_info[j].identifier, strlen(global_format.struct_info[i].field_info[j].identifier)) != strlen(global_format.struct_info[i].field_info[j].identifier)) {
 						perror("send_field_identifier");
 						return -6;
 					}
-					DEBUG_PRINT;
 					if (send_data(fd, &null_terminator, 1) != 1) {
 						perror("send_null_terminator");
 						return -6;
@@ -547,19 +556,41 @@ int send_struct_server(int fd,enum structs struct_id, void* src, struct format_m
 		if (mask->struct_mask[struct_id].field_mask[i] != 0) {
 			// TODO: Add serialization (byte order)
 			if (global_format.struct_info[struct_id].field_info[i].is_ptr == 1) {
+				byte_swap(get_field_nmemb(struct_id, src, i),4);
 				if (send_data(fd, get_field_nmemb(struct_id, src, i), 4) != 4) {
 					printf("Error sending nmemb_field\n");
 					return -6;
 				}
+				byte_swap(get_field_nmemb(struct_id, src, i),4);
+				
+				uint32_t nmemb_field = *((uint32_t*)get_field_nmemb(struct_id, src, i));
+				uint8_t* ptr_field_mutable = malloc(global_format.struct_info[struct_id].field_info[i].size*nmemb_field);
+
+				if (ptr_field_mutable == NULL) {
+					perror("malloc");
+					return -5;
+				}
+				memcpy(ptr_field_mutable,*((void**)get_field(struct_id, src, i)), global_format.struct_info[struct_id].field_info[i].size*nmemb_field);
+				for (int j=0;j<(*((uint32_t*)get_field_nmemb(struct_id, src, i)));j++) {
+					byte_swap(ptr_field_mutable+j*global_format.struct_info[struct_id].field_info[i].size, global_format.struct_info[struct_id].field_info[i].size);
+
+				}
 				if (send_data(fd, *((void**)get_field(struct_id, src, i)), global_format.struct_info[struct_id].field_info[i].size*(*((uint32_t*)get_field_nmemb(struct_id, src, i)))) != global_format.struct_info[struct_id].field_info[i].size*(*((uint32_t*)get_field_nmemb(struct_id, src, i)))) {
+					free(ptr_field_mutable);
+					ptr_field_mutable=NULL;
 					perror("Error sending ptr_field");
 					return -6;
 				}
+				free(ptr_field_mutable);
+				ptr_field_mutable=NULL;
 			} else {
+
+				byte_swap(get_field(struct_id, src, i),global_format.struct_info[struct_id].field_info[i].size);
 				if (send_data(fd, get_field(struct_id, src, i), global_format.struct_info[struct_id].field_info[i].size) != global_format.struct_info[struct_id].field_info[i].size) {
 					perror("Error sending field");
 					return -6;
 				}
+				byte_swap(get_field(struct_id, src, i),global_format.struct_info[struct_id].field_info[i].size);
 
 			}
 		}
@@ -600,28 +631,55 @@ int send_struct_client(int fd,enum structs struct_id, void* src, struct redir_ta
 		perror("Error sending identifier in send_struct_client");
 		return -6;
 	}
-	printf("num_fields: %u\n", global_format.struct_info[struct_id].num_of_fields);
 	for (int i=0;i<global_format.struct_info[struct_id].num_of_fields;i++) {
 		if (redir->field_remap[struct_id][i] == UINT32_MAX) {
 			return 0;
 		}
-		printf("I WAS CALLED!!\n");
 		// TODO: Add serialization (byte order)
 		if (global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].is_ptr == 1) {
-			DEBUG_PRINT;
+
+			byte_swap(get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]),4);
+
 			if (send_data(fd, get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]), 4) != 4) {
 				printf("Error sending nmemb_field\n");
 				return -6;
 			}
-			if (send_data(fd, *((void**)get_field(struct_id, src, redir->field_remap[struct_id][i])), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*(*((uint32_t*)get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i])))) != global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*(*((uint32_t*)get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i])))) {
+
+			byte_swap(get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]),4);
+			uint32_t nmemb_field = (*((uint32_t*)get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i])));
+			// copy the field so it is mutable
+			uint8_t* ptr_field_mutable = malloc(global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field);
+			if (ptr_field_mutable == NULL) {
+				perror("malloc");
+				return -5;
+			}
+			memcpy(ptr_field_mutable,*((void**)get_field(struct_id, src, redir->field_remap[struct_id][i])), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field);
+
+			for (int j=0;j<nmemb_field;j++) {
+				if (byte_swap(ptr_field_mutable+(j*global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) == 1) {
+					printf("byte_swap_error\n");
+					free(ptr_field_mutable);
+					ptr_field_mutable=NULL;
+					return -5;
+				}
+				
+			}
+
+			if (send_data(fd, ptr_field_mutable, global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field) != global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field) {
+				free(ptr_field_mutable);
+				ptr_field_mutable=NULL;
 				perror("Error sending ptr_field");
 				return -6;
 			}
+			free(ptr_field_mutable);
+			ptr_field_mutable=NULL;
 		} else {
+			byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size);
 			if (send_data(fd, get_field(struct_id, src, redir->field_remap[struct_id][i]), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) != global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) {
 				perror("Error sending field");
 				return -6;
 			}
+			byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size);
 		}
 		
 	}
@@ -634,7 +692,6 @@ int recv_struct_server(int fd,enum structs struct_id,void* dest, struct format_m
 		return -6;
 	}
 	size = ntohl(size);
-	printf("server_recv size: %u\n", size);
 	uint8_t* data = (uint8_t*) malloc(size);
 	if (data == NULL) {
 		perror("malloc");
@@ -675,6 +732,7 @@ int recv_struct_server(int fd,enum structs struct_id,void* dest, struct format_m
 					return -4;
 				}
 				memcpy(get_field_nmemb(identifier, dest, i), data+iter, 4);
+				byte_swap(get_field_nmemb(identifier, dest, i), 4);
 				iter+=4;
 				uint32_t nmemb_field = *((uint32_t*)get_field_nmemb(identifier,dest,i));
 				if (global_format.struct_info[identifier].field_info[i].size*nmemb_field > size-iter) {
@@ -684,7 +742,12 @@ int recv_struct_server(int fd,enum structs struct_id,void* dest, struct format_m
 				}
 				uint8_t* buf = (uint8_t*)malloc(global_format.struct_info[identifier].field_info[i].size*nmemb_field);
 				memcpy(buf, data+iter, global_format.struct_info[identifier].field_info[i].size*nmemb_field);
-				// get size of generic data pointer
+				for (int j=0;j<nmemb_field;j++) {
+					byte_swap(buf+j*global_format.struct_info[identifier].field_info[i].size, global_format.struct_info[identifier].field_info[i].size);
+
+				}
+
+				// set the field ptr 
 				memcpy(get_field(identifier, dest, i), &buf, sizeof(void*));
 				iter+=global_format.struct_info[identifier].field_info[i].size*nmemb_field;
 			} else {
@@ -694,6 +757,7 @@ int recv_struct_server(int fd,enum structs struct_id,void* dest, struct format_m
 					return -4;
 				}
 				memcpy(get_field(identifier, dest, i), data+iter, global_format.struct_info[identifier].field_info[i].size);
+				byte_swap(get_field(identifier, dest, i), global_format.struct_info[identifier].field_info[i].size);
 				iter +=global_format.struct_info[identifier].field_info[i].size;
 			}
 		}
@@ -713,7 +777,6 @@ int recv_struct_client(int fd,enum structs struct_id, void* dest, struct redir_t
 		return -6;
 	}
 	size = ntohl(size);
-	printf("size: %u\n",size);
 	uint8_t* data = (uint8_t*) malloc(size);
 	if (data == NULL) {
 		perror("malloc");
@@ -748,7 +811,6 @@ loop_success:
 	}
 	for (int i=0;i<global_format.struct_info[identifier].num_of_fields;i++) {
 		if (redir->field_remap[identifier][i] == UINT32_MAX) {
-			DEBUG_PRINT;
 			break;
 		}
 		if (global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].is_ptr == 1) {
@@ -758,7 +820,7 @@ loop_success:
 				return -4;
 			}
 			memcpy(get_field_nmemb(identifier, dest, redir->field_remap[identifier][i]), data+iter, 4);
-			printf("nmemb: %u\n", *((uint32_t*)get_field_nmemb(identifier, dest, redir->field_remap[identifier][i])));
+			byte_swap(get_field_nmemb(identifier, dest, redir->field_remap[identifier][i]), 4);
 
 			iter+=4;
 			uint32_t nmemb_field = *((uint32_t*)get_field_nmemb(identifier,dest,redir->field_remap[identifier][i]));
@@ -769,6 +831,9 @@ loop_success:
 			}
 			uint8_t* buf = (uint8_t*)malloc(global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size*nmemb_field);
 			memcpy(buf, data+iter, global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size*nmemb_field);
+			for (int j=0;j<nmemb_field;j++) {
+				byte_swap(buf+j*global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size, global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size);
+			}
 			// get size of generic data pointer
 			memcpy(get_field(identifier, dest, redir->field_remap[identifier][i]), &buf, sizeof(void*));
 			iter+=global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size*nmemb_field;
@@ -778,6 +843,7 @@ loop_success:
 				return -4;
 			}
 			memcpy(get_field(identifier, dest, redir->field_remap[identifier][i]),data+iter, global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size);
+			byte_swap(get_field(identifier, dest, i), global_format.struct_info[identifier].field_info[i].size);
 			iter +=global_format.struct_info[identifier].field_info[redir->field_remap[identifier][i]].size;
 		}
 	}

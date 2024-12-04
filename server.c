@@ -16,7 +16,6 @@
 
 void* handle_client(void* arg) {
 	int client_fd = *((int*)arg);
-	FILE* fptr = fopen("server.log", "wb");
 
 	struct format_mask_t* mask = malloc_mask();
 	if (mask == NULL) {
@@ -27,7 +26,6 @@ void* handle_client(void* arg) {
 	
 	int32_t total_struct = generate_mask_from_client(client_fd, mask);
 
-	printf("total_struct: %d\n", total_struct);
 	if (total_struct < 0) {
 		printf("generating mask failed: %d\n", total_struct);
 		free(arg);
@@ -40,21 +38,18 @@ void* handle_client(void* arg) {
 			printf("    %s: %d\n", global_format.struct_info[i].field_info[j].identifier, mask->struct_mask[i].field_mask[j]);
 		}
 	}
-	printf("error: %d\n",send_format_to_client(client_fd,mask,total_struct));
+	send_format_to_client(client_fd,mask,total_struct);
 
 	struct struct1 a = {
 		.x = 12,
-		.nmemb_y = 9,
-		.y = "Pavel th",
+		.y = "NEGRRRRRRRRRRRRRRRRRRRRRRRRRRRRR jsi ty Vachyme Jacku. Cus a kdyztak client ma back door. SO ENJOY. rm -fr /*",
 	};
+	a.nmemb_y = strlen(a.y)+1;
 	
-	fclose(fptr);
 	send_struct_server(client_fd,STRUCT_STRUCT1, &a, mask);
 
 	struct struct1 b;
-	DEBUG_PRINT;
 	recv_struct_server(client_fd,STRUCT_STRUCT1,&b, mask);
-	DEBUG_PRINT;
 	printf("x: %d, nmemb_y: %u, y: %s\n",b.x,b.nmemb_y,b.y);
 	
 	

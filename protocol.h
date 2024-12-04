@@ -75,7 +75,7 @@ struct redir_table_t {
 //	_F(field_name, type, ptr, indentifier, essential, size of (one) member)
 #define STRUCT1_FIELDS(_F, ...)                                                \
   _F(y, char*, PTR, "y", 1, sizeof(char)) \
-  _F(x, uint32_t ,NORMAL, "x", 0, 4)\
+  _F(x, const uint32_t ,NORMAL, "x", 0, 4)\
 
 #define STRUCT2_FIELDS(_F, ...) \
   _F(z, char, NORMAL, "z", 1, 1)
@@ -179,6 +179,7 @@ void free_redir_table(struct redir_table_t *redir);
 struct redir_table_t* malloc_redir_table();
 
 void *get_field(enum structs struct_id, void *object, uint32_t field_id);
+int byte_swap(void *data, size_t size);
 
 
 int send_struct_client(int fd,enum structs struct_id, void* src, struct redir_table_t* redir);
