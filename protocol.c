@@ -262,513 +262,626 @@ int32_t generate_mask_from_client(int fd, struct format_mask_t* mask) {
 								goto fail_field;
 							}
 							if (strcmp(global_format.struct_info[j].field_info[k].type, (char*)data+iter) != 0) {
-								printf("Type confusion in field %s\n", global_format.struct_info[j].field_info[k].identifier);
-								goto fail_field;
-							}
-							mask->struct_mask[j].field_mask[k] = 1;
-							iter+=field_name_len+1+field_type_len+1;
-							goto skip;
-						}
-					}
-				fail_field:
-					iter+= field_name_len+1+field_type_len+1;
-					if (essential == 1) {
-						free(data);
-						printf("Essential field not supported by server\n");
-						return -2;
-					}
-				skip:
-					continue;
-				}
-				goto skip_outer;
-			}
-		} 
-		if (is_essential == 1) {
-			free(data);
-			printf("Essential struct not supported by server\n");
-			return -2;
-		}
-	skip_outer:
-		free(data);
-		continue;
-	}
-	// clean up the mask and check for server requirements
-	for (int i=0;i<global_format.num_of_structs;i++) {
-		
-		uint8_t struct_exists=0;
-		for(int j=0;j < global_format.struct_info[i].num_of_fields;j++) {
-			if(mask->struct_mask[i].field_mask[j] != 0) {
-				struct_exists = 1;
-			}
+                                                          printf(
+                                                              "Type confusion "
+                                                              "in field %s\n",
+                                                              global_format
+                                                                  .struct_info
+                                                                      [j]
+                                                                  .field_info[k]
+                                                                  .identifier);
+                                                          goto fail_field;
+                                                        }
+                                                        mask->struct_mask[j]
+                                                            .field_mask[k] = 1;
+                                                        iter +=
+                                                            field_name_len + 1 +
+                                                            field_type_len + 1;
+                                                        goto skip;
+                                                }
+                                        }
+                                fail_field:
+                                  iter +=
+                                      field_name_len + 1 + field_type_len + 1;
+                                  if (essential == 1) {
+                                    free(data);
+                                    printf("Essential field not supported by "
+                                           "server\n");
+                                    return -2;
+                                  }
+                                skip:
+                                  continue;
+                                }
+                                goto skip_outer;
+                        }
+                }
+                if (is_essential == 1) {
+                  free(data);
+                  printf("Essential struct not supported by server\n");
+                  return -2;
+                }
+        skip_outer:
+          free(data);
+          continue;
+        }
+        // clean up the mask and check for server requirements
+        for (int i = 0; i < global_format.num_of_structs; i++) {
 
+          uint8_t struct_exists = 0;
+          for (int j = 0; j < global_format.struct_info[i].num_of_fields; j++) {
+            if (mask->struct_mask[i].field_mask[j] != 0) {
+              struct_exists = 1;
+            }
 
-			if (global_format.struct_info[i].field_info[j].essential == 1 && mask->struct_mask[i].field_mask[j] == 0) {
-				printf("Essential field not supported by client\n");
-				return -1; 
-			} 
-		}
-		if (struct_exists == 0) {
-			free(mask->struct_mask[i].field_mask);
-			mask->struct_mask[i].field_mask = NULL;
-			if (global_format.struct_info[i].essential == 1) {
-				printf("Essential struct not supported by client\n");
-				return -1;
-			}
-		}
-	}
-	return total_num_of_struct;
+            if (global_format.struct_info[i].field_info[j].essential == 1 &&
+                mask->struct_mask[i].field_mask[j] == 0) {
+              printf("Essential field not supported by client\n");
+              return -1;
+            }
+          }
+          if (struct_exists == 0) {
+            free(mask->struct_mask[i].field_mask);
+            mask->struct_mask[i].field_mask = NULL;
+            if (global_format.struct_info[i].essential == 1) {
+              printf("Essential struct not supported by client\n");
+              return -1;
+            }
+          }
+        }
+        return total_num_of_struct;
 }
 
+int send_format_to_client(int fd, struct format_mask_t *mask,
+                          int32_t num_of_structs) {
+  int32_t num_of_structs_net = htonl(num_of_structs);
+  if (send_data(fd, &num_of_structs_net, 4) != 4) {
+    perror("send_num_of_structs");
+    return -6;
+  }
+  if (num_of_structs < 0) {
+    return num_of_structs;
+  }
+  for (uint32_t i = 0; i < global_format.num_of_structs; i++) {
+    uint32_t size = 0;
+    if (mask->struct_mask[i].field_mask != NULL) {
+      size += strlen(global_format.struct_info[i].identifier); // struct_name
+      size++;                   // null terminator
+      size += sizeof(uint32_t); // struct_identifier
+      for (int j = 0; j < global_format.struct_info[i].num_of_fields; j++) {
+        if (mask->struct_mask[i].field_mask[j] != 0) {
+          size++; // size
+          size += strlen(global_format.struct_info[i].field_info[j].identifier);
+          size++; // null terminator
+        }
+      }
+      size = htonl(size);
+      if (send_data(fd, &size, 4) != 4) {
+        perror("send_size");
+        return -6;
+      }
 
-int send_format_to_client(int fd, struct format_mask_t* mask, int32_t num_of_structs) {
-	int32_t num_of_structs_net = htonl(num_of_structs);
-	if (send_data(fd, &num_of_structs_net, 4) != 4) {
-		perror("send_num_of_structs");
-		return -6;
-	}
-	if (num_of_structs < 0) {
-		return num_of_structs;
-	}
-	for (uint32_t i=0;i<global_format.num_of_structs;i++) {
-		uint32_t size=0;
-		if (mask->struct_mask[i].field_mask != NULL) {
-			size+=strlen(global_format.struct_info[i].identifier); // struct_name
-			size++; // null terminator
-			size+=sizeof(uint32_t); // struct_identifier
-			for(int j=0;j<global_format.struct_info[i].num_of_fields;j++) {
-				if (mask->struct_mask[i].field_mask[j] != 0) {
-					size++; // size
-					size += strlen(global_format.struct_info[i].field_info[j].identifier);
-					size++; // null terminator
-				}
-			}
-			size = htonl(size);
-			if (send_data(fd, &size, 4) != 4) {
-				perror("send_size");
-				return -6;
-			}
-			
-			if (send_data(fd, global_format.struct_info[i].identifier, strlen(global_format.struct_info[i].identifier)) !=strlen(global_format.struct_info[i].identifier)) {
-				perror("send_struct_name");
-				return -6;
-			}
-			char null_terminator = '\0';
-			if (send_data(fd, &null_terminator, 1) != 1) {
-				perror("send_null_terminator");
-				return -6;
-			}
-			uint32_t i_net = htonl(i);
-			if (send_data(fd, &i_net, 4) != 4) {
-				perror("send_struct_identifier");
-				return -6;
-			}
-			for(int j=0;j<global_format.struct_info[i].num_of_fields;j++) {
-				if (mask->struct_mask[i].field_mask[j] != 0) {
-					if (send_data(fd, mask->struct_mask[i].field_mask+j, 1) != 1) {
-						perror("send_field_size");
-						return -6;
-					}
-					if (send_data(fd, global_format.struct_info[i].field_info[j].identifier, strlen(global_format.struct_info[i].field_info[j].identifier)) != strlen(global_format.struct_info[i].field_info[j].identifier)) {
-						perror("send_field_identifier");
-						return -6;
-					}
-					if (send_data(fd, &null_terminator, 1) != 1) {
-						perror("send_null_terminator");
-						return -6;
-					}
-				}
-				
-			}
-		}
-	}
-	return 0;
-
+      if (send_data(fd, global_format.struct_info[i].identifier,
+                    strlen(global_format.struct_info[i].identifier)) !=
+          strlen(global_format.struct_info[i].identifier)) {
+        perror("send_struct_name");
+        return -6;
+      }
+      char null_terminator = '\0';
+      if (send_data(fd, &null_terminator, 1) != 1) {
+        perror("send_null_terminator");
+        return -6;
+      }
+      uint32_t i_net = htonl(i);
+      if (send_data(fd, &i_net, 4) != 4) {
+        perror("send_struct_identifier");
+        return -6;
+      }
+      for (int j = 0; j < global_format.struct_info[i].num_of_fields; j++) {
+        if (mask->struct_mask[i].field_mask[j] != 0) {
+          if (send_data(fd, mask->struct_mask[i].field_mask + j, 1) != 1) {
+            perror("send_field_size");
+            return -6;
+          }
+          if (send_data(
+                  fd, global_format.struct_info[i].field_info[j].identifier,
+                  strlen(
+                      global_format.struct_info[i].field_info[j].identifier)) !=
+              strlen(global_format.struct_info[i].field_info[j].identifier)) {
+            perror("send_field_identifier");
+            return -6;
+          }
+          if (send_data(fd, &null_terminator, 1) != 1) {
+            perror("send_null_terminator");
+            return -6;
+          }
+        }
+      }
+    }
+  }
+  return 0;
 }
 
+// Params: recv_fd, pointer to malloced mask, pointer to var that schould store
+// redir_table
+int32_t generate_format_from_server(int fd, struct redir_table_t *redir) {
+  int32_t num_of_structs = 0;
+  if (recv_data(fd, &num_of_structs, 4) != 4) {
+    perror("recv_num_of_structs");
+    return -6;
+  }
+  num_of_structs = ntohl(num_of_structs);
+  if (num_of_structs < 0) {
+    printf("error happened: %d\n", num_of_structs);
+    return num_of_structs;
+  }
 
-// Params: recv_fd, pointer to malloced mask, pointer to var that schould store redir_table
-int32_t generate_format_from_server(int fd, struct redir_table_t* redir) {
-	int32_t num_of_structs=0;
-	if (recv_data(fd,&num_of_structs, 4) != 4) {
-		perror("recv_num_of_structs");
-		return -6;
-	}
-	num_of_structs = ntohl(num_of_structs);
-	if (num_of_structs < 0) {
-		printf("error happened: %d\n", num_of_structs);
-		return num_of_structs;
-	}
+  // loop until you receive all suported structs and their format
+  for (int i = 0; i < num_of_structs; i++) {
+    uint32_t size = 0;
+    if (recv_data(fd, &size, 4) != 4) {
+      perror("recv_error_size");
+      return -6;
+    }
+    size = ntohl(size);
+    uint8_t *data = malloc(size);
+    if (data == NULL) {
+      perror("malloc");
+      return -5;
+    }
+    if (recv_data(fd, data, size) != size) {
+      free(data);
+      perror("recv_data");
+      return -6;
+    }
 
-	// loop until you receive all suported structs and their format
-	for (int i=0;i<num_of_structs;i++) {
-		uint32_t size=0;
-		if (recv_data(fd, &size, 4) != 4) {
-			perror("recv_error_size");
-			return -6;
-		}
-		size = ntohl(size);
-		uint8_t* data = malloc(size);
-		if (data == NULL) {
-			perror("malloc");
-			return -5;
-		}
-		if (recv_data(fd, data, size) != size) {
-			free(data);
-			perror("recv_data");
-			return -6;
-		}
+    uint32_t iter = 0;
 
-		uint32_t iter=0;
+    size_t struct_name_len = strnlen((const char *)data + iter, size - iter);
+    if (size - iter == struct_name_len) {
+      free(data);
+      printf("Struct not null terminated\n");
+      return -4;
+    }
+    uint32_t identifier = UINT32_MAX;
+    for (int j = 0; j < global_format.num_of_structs; j++) {
+      if (strcmp((char *)data + iter,
+                 global_format.struct_info[j].identifier) == 0) {
+        iter += struct_name_len + 1;
 
-		size_t struct_name_len = strnlen((const char*) data+iter, size-iter);
-		if (size-iter == struct_name_len) {
-			free(data);
-			printf("Struct not null terminated\n");
-			return -4;
-		}
-		uint32_t identifier=UINT32_MAX;
-		for (int j=0;j<global_format.num_of_structs;j++) {
-			if (strcmp((char*) data+iter, global_format.struct_info[j].identifier) == 0) {
-				iter+=struct_name_len+1;
+        READ_SAFE_FORMAT(identifier, iter, size, data, free(data);, "struct");
+        identifier = ntohl(identifier);
 
-				READ_SAFE_FORMAT(identifier, iter, size, data, free(data);,"struct");
-				identifier = ntohl(identifier);
+        uint32_t field_count = 0;
+        while (size - iter > 0) {
+          uint8_t field_size;
+          READ_SAFE_FORMAT(field_size, iter, size, data, free(data);, "field");
 
-				uint32_t field_count=0;
-				while (size-iter > 0) {
-					uint8_t field_size;
-					READ_SAFE_FORMAT(field_size, iter, size, data,free(data);,"field");
-
-					size_t field_name_len = strnlen((const char*) data+iter, size-iter);
-					if (size-iter == field_name_len) {
-						free(data);
-						printf("Field not null terminated\n");
-						return -4;
-					}
-					for (int k=0;k<global_format.struct_info[j].num_of_fields;k++) {
-						if (strcmp((char*) data+iter, global_format.struct_info[j].field_info[k].identifier) == 0) {
-							iter += field_name_len+1;
-							if (field_count > global_format.struct_info[j].num_of_fields) {
-								printf("too much fields read\n");
-								free(data);
-								return -5;
-							}
-							// reverse so nth element in order in at kth place in global_format
-							redir->field_remap[j][field_count] = k;
-							field_count++;
-							break;
-						}
-					}
-				}
-				if (field_count > 0) {
-					redir->struct_remap[j] = identifier;
-				}
-				break;
-			}
-		}
-		if (identifier == UINT32_MAX) {
-			free(data);
-			printf("invalid struct identifier\n");
-			return -4;
-		}
-	}
-	// cleanup unused structs
-	for (int i=0;i<global_format.num_of_structs;i++) {
-		if (redir->struct_remap[i] == UINT32_MAX) {
-			free(redir->field_remap[i]);
-			redir->field_remap[i] = NULL;
-		}
-	}
-	return 0;
+          size_t field_name_len =
+              strnlen((const char *)data + iter, size - iter);
+          if (size - iter == field_name_len) {
+            free(data);
+            printf("Field not null terminated\n");
+            return -4;
+          }
+          for (int k = 0; k < global_format.struct_info[j].num_of_fields; k++) {
+            if (strcmp((char *)data + iter,
+                       global_format.struct_info[j].field_info[k].identifier) ==
+                0) {
+              iter += field_name_len + 1;
+              if (field_count > global_format.struct_info[j].num_of_fields) {
+                printf("too much fields read\n");
+                free(data);
+                return -5;
+              }
+              // reverse so nth element in order in at kth place in
+              // global_format
+              redir->field_remap[j][field_count] = k;
+              field_count++;
+              break;
+            }
+          }
+        }
+        if (field_count > 0) {
+          redir->struct_remap[j] = identifier;
+        }
+        break;
+      }
+    }
+    if (identifier == UINT32_MAX) {
+      free(data);
+      printf("invalid struct identifier\n");
+      return -4;
+    }
+  }
+  // cleanup unused structs
+  for (int i = 0; i < global_format.num_of_structs; i++) {
+    if (redir->struct_remap[i] == UINT32_MAX) {
+      free(redir->field_remap[i]);
+      redir->field_remap[i] = NULL;
+    }
+  }
+  return 0;
 }
 
 STRUCTS(MAKE_SUB_GET_FIELD)
-void* get_field(enum structs struct_id, void* object, uint32_t field_id) {
-	void* (*sub_funcs[])(void*, uint32_t) = {STRUCTS(MAKE_FUNCTION_POINTERS_SUB_GET)};
-	if (struct_id >= global_format.num_of_structs) {
-		printf("%s: struct_id too big\n", __func__);
-		return NULL;
-	}
-	if (field_id >= global_format.struct_info[struct_id].num_of_fields) {
-		printf("%s: field_id too big\n", __func__);
-		return NULL;
-	}
-	if (object == NULL) {
-		printf("%s: object is NULL\n", __func__);
-		return NULL;
-	}
-	return sub_funcs[struct_id](object, field_id);
+void *get_field(enum structs struct_id, void *object, uint32_t field_id) {
+  void *(*sub_funcs[])(void *,
+                       uint32_t) = {STRUCTS(MAKE_FUNCTION_POINTERS_SUB_GET)};
+  if (struct_id >= global_format.num_of_structs) {
+    printf("%s: struct_id too big\n", __func__);
+    return NULL;
+  }
+  if (field_id >= global_format.struct_info[struct_id].num_of_fields) {
+    printf("%s: field_id too big\n", __func__);
+    return NULL;
+  }
+  if (object == NULL) {
+    printf("%s: object is NULL\n", __func__);
+    return NULL;
+  }
+  return sub_funcs[struct_id](object, field_id);
 }
 STRUCTS(MAKE_SUB_GET_NMEMB_FIELD)
-void* get_field_nmemb(enum structs struct_id, void* object, uint32_t field_id) {
-	void* (*sub_funcs[])(void*, uint32_t) = {STRUCTS(MAKE_FUNCTION_POINTERS_SUB_GET_NMEMB)};
-	if (struct_id >= global_format.num_of_structs) {
-		printf("%s: struct_id too big\n", __func__);
-		return NULL;
-	}
-	if (field_id >= global_format.struct_info[struct_id].num_of_fields) {
-		printf("%s: field_id too big\n", __func__);
-		return NULL;
-	}
-	if (global_format.struct_info[struct_id].field_info[field_id].is_ptr == 0) {
-		printf("Attempted to get nmemb of NORMAL field %s:%s\n", global_format.struct_info[struct_id].identifier, global_format.struct_info[struct_id].field_info[field_id].identifier);
-		return NULL;
-	}
-	if (object == NULL) {
-		printf("%s: object is NULL\n", __func__);
-		return NULL;
-	}
-	return sub_funcs[struct_id](object, field_id);
+void *get_field_nmemb(enum structs struct_id, void *object, uint32_t field_id) {
+  void *(*sub_funcs[])(void *, uint32_t) = {
+      STRUCTS(MAKE_FUNCTION_POINTERS_SUB_GET_NMEMB)};
+  if (struct_id >= global_format.num_of_structs) {
+    printf("%s: struct_id too big\n", __func__);
+    return NULL;
+  }
+  if (field_id >= global_format.struct_info[struct_id].num_of_fields) {
+    printf("%s: field_id too big\n", __func__);
+    return NULL;
+  }
+  if (global_format.struct_info[struct_id].field_info[field_id].is_ptr == 0) {
+    printf(
+        "Attempted to get nmemb of NORMAL field %s:%s\n",
+        global_format.struct_info[struct_id].identifier,
+        global_format.struct_info[struct_id].field_info[field_id].identifier);
+    return NULL;
+  }
+  if (object == NULL) {
+    printf("%s: object is NULL\n", __func__);
+    return NULL;
+  }
+  return sub_funcs[struct_id](object, field_id);
 }
 
-int send_struct_server(int fd,enum structs struct_id, void* src, struct format_mask_t* mask) {
-	if (struct_id == STRUCT_ANY) {
-		printf("Cannot send unknown struct\n");
-		return -5;
-	}
-	if (mask->struct_mask[struct_id].field_mask == NULL) {
-		printf("Attempted to send masked struct %s\n", global_format.struct_info[struct_id].identifier);
-		return -7;
-	}
-	uint32_t size = 0;
-	for (int i=0;i<global_format.struct_info[struct_id].num_of_fields;i++) {
-		if (mask->struct_mask[struct_id].field_mask[i] != 0) {
-			if (global_format.struct_info[struct_id].field_info[i].is_ptr == 1) {
-				size+=4;
-				size += global_format.struct_info[struct_id].field_info[i].size*(*((uint32_t*)get_field_nmemb(struct_id, src, i)));
-			} else {
-				size += global_format.struct_info[struct_id].field_info[i].size;
-			}
-		}
-	}
-	size += 4; // identifier
-	size = htonl(size);
-	if (send_data(fd, &size, 4) != 4) {
-		perror("Error sending size in send_struct_server");
-		return -6;
-	}
-	uint32_t identifier = htonl(struct_id);
-	if (send_data(fd, &identifier, 4) != 4) {
-		perror("Error sending identifier in send_struct_server");
-		return -6;
-	}
-	for (int i=0;i<global_format.struct_info[struct_id].num_of_fields;i++) {
-		if (mask->struct_mask[struct_id].field_mask[i] != 0) {
-			// TODO: Add serialization (byte order)
-			if (global_format.struct_info[struct_id].field_info[i].is_ptr == 1) {
-				byte_swap(get_field_nmemb(struct_id, src, i),4);
-				if (send_data(fd, get_field_nmemb(struct_id, src, i), 4) != 4) {
-					printf("Error sending nmemb_field\n");
-					return -6;
-				}
-				byte_swap(get_field_nmemb(struct_id, src, i),4);
-				
-				uint32_t nmemb_field = *((uint32_t*)get_field_nmemb(struct_id, src, i));
-				uint8_t* ptr_field_mutable = malloc(global_format.struct_info[struct_id].field_info[i].size*nmemb_field);
+int send_struct_server(int fd, enum structs struct_id, void *src,
+                       struct format_mask_t *mask) {
+  if (struct_id == STRUCT_ANY) {
+    printf("Cannot send unknown struct\n");
+    return -5;
+  }
+  if (mask->struct_mask[struct_id].field_mask == NULL) {
+    printf("Attempted to send masked struct %s\n",
+           global_format.struct_info[struct_id].identifier);
+    return -7;
+  }
+  uint32_t size = 0;
+  for (int i = 0; i < global_format.struct_info[struct_id].num_of_fields; i++) {
+    if (mask->struct_mask[struct_id].field_mask[i] != 0) {
+      if (global_format.struct_info[struct_id].field_info[i].is_ptr == 1) {
+        size += 4;
+        size += global_format.struct_info[struct_id].field_info[i].size *
+                (*((uint32_t *)get_field_nmemb(struct_id, src, i)));
+      } else {
+        size += global_format.struct_info[struct_id].field_info[i].size;
+      }
+    }
+  }
+  size += 4; // identifier
+  size = htonl(size);
+  if (send_data(fd, &size, 4) != 4) {
+    perror("Error sending size in send_struct_server");
+    return -6;
+  }
+  uint32_t identifier = htonl(struct_id);
+  if (send_data(fd, &identifier, 4) != 4) {
+    perror("Error sending identifier in send_struct_server");
+    return -6;
+  }
+  for (int i = 0; i < global_format.struct_info[struct_id].num_of_fields; i++) {
+    if (mask->struct_mask[struct_id].field_mask[i] != 0) {
+      // TODO: Add serialization (byte order)
+      if (global_format.struct_info[struct_id].field_info[i].is_ptr == 1) {
+        byte_swap(get_field_nmemb(struct_id, src, i), 4);
+        if (send_data(fd, get_field_nmemb(struct_id, src, i), 4) != 4) {
+          printf("Error sending nmemb_field\n");
+          return -6;
+        }
+        byte_swap(get_field_nmemb(struct_id, src, i), 4);
 
-				if (ptr_field_mutable == NULL) {
-					perror("malloc");
-					return -5;
-				}
-				memcpy(ptr_field_mutable,*((void**)get_field(struct_id, src, i)), global_format.struct_info[struct_id].field_info[i].size*nmemb_field);
-				for (int j=0;j<(*((uint32_t*)get_field_nmemb(struct_id, src, i)));j++) {
-					byte_swap(ptr_field_mutable+j*global_format.struct_info[struct_id].field_info[i].size, global_format.struct_info[struct_id].field_info[i].size);
+        uint32_t nmemb_field =
+            *((uint32_t *)get_field_nmemb(struct_id, src, i));
+        uint8_t *ptr_field_mutable =
+            malloc(global_format.struct_info[struct_id].field_info[i].size *
+                   nmemb_field);
 
-				}
-				if (send_data(fd, *((void**)get_field(struct_id, src, i)), global_format.struct_info[struct_id].field_info[i].size*(*((uint32_t*)get_field_nmemb(struct_id, src, i)))) != global_format.struct_info[struct_id].field_info[i].size*(*((uint32_t*)get_field_nmemb(struct_id, src, i)))) {
-					free(ptr_field_mutable);
-					ptr_field_mutable=NULL;
-					perror("Error sending ptr_field");
-					return -6;
-				}
-				free(ptr_field_mutable);
-				ptr_field_mutable=NULL;
-			} else {
+        if (ptr_field_mutable == NULL) {
+          perror("malloc");
+          return -5;
+        }
+        memcpy(ptr_field_mutable, *((void **)get_field(struct_id, src, i)),
+               global_format.struct_info[struct_id].field_info[i].size *
+                   nmemb_field);
+        for (int j = 0; j < (*((uint32_t *)get_field_nmemb(struct_id, src, i)));
+             j++) {
+          byte_swap(
+              ptr_field_mutable +
+                  j * global_format.struct_info[struct_id].field_info[i].size,
+              global_format.struct_info[struct_id].field_info[i].size);
+        }
+        if (send_data(
+                fd, *((void **)get_field(struct_id, src, i)),
+                global_format.struct_info[struct_id].field_info[i].size *
+                    (*((uint32_t *)get_field_nmemb(struct_id, src, i)))) !=
+            global_format.struct_info[struct_id].field_info[i].size *
+                (*((uint32_t *)get_field_nmemb(struct_id, src, i)))) {
+          free(ptr_field_mutable);
+          ptr_field_mutable = NULL;
+          perror("Error sending ptr_field");
+          return -6;
+        }
+        free(ptr_field_mutable);
+        ptr_field_mutable = NULL;
+      } else {
 
-				byte_swap(get_field(struct_id, src, i),global_format.struct_info[struct_id].field_info[i].size);
-				if (send_data(fd, get_field(struct_id, src, i), global_format.struct_info[struct_id].field_info[i].size) != global_format.struct_info[struct_id].field_info[i].size) {
-					perror("Error sending field");
-					return -6;
-				}
-				byte_swap(get_field(struct_id, src, i),global_format.struct_info[struct_id].field_info[i].size);
-
-			}
-		}
-	}
-	return 0;
+        byte_swap(get_field(struct_id, src, i),
+                  global_format.struct_info[struct_id].field_info[i].size);
+        if (send_data(
+                fd, get_field(struct_id, src, i),
+                global_format.struct_info[struct_id].field_info[i].size) !=
+            global_format.struct_info[struct_id].field_info[i].size) {
+          perror("Error sending field");
+          return -6;
+        }
+        byte_swap(get_field(struct_id, src, i),
+                  global_format.struct_info[struct_id].field_info[i].size);
+      }
+    }
+  }
+  return 0;
 }
 
-int send_struct_client(int fd,enum structs struct_id, void* src, struct redir_table_t* redir) {
-	if (struct_id == STRUCT_ANY) {
-		printf("Cannot send unknown struct\n");
-		return -5;
-	}
-	if (redir->struct_remap[struct_id] == UINT32_MAX) {
-		printf("Attempted to send \"masked\" struct %s\n", global_format.struct_info[struct_id].identifier);
-		return -7;
-	}
-	uint32_t size = 0;
-	for (int i=0;i<global_format.struct_info[struct_id].num_of_fields;i++) {
-		if (redir->field_remap[struct_id][i] == UINT32_MAX) {
-			// no need to continue the loop all the next ones are UINT32_MAX
-			break;
-		}
-		if (global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].is_ptr == 1) {
-			size+=4;
-			size += global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*(*((uint32_t*)get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i])));
-		} else {
-			size += global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size;
-		}
-	}
-	size += 4; // identifier
-	size = htonl(size);
-	if (send_data(fd, &size, 4) != 4) {
-		perror("Error sending size in send_struct_client");
-		return -6;
-	}
-	uint32_t identifier = htonl(redir->struct_remap[struct_id]);
-	if (send_data(fd, &identifier, 4) != 4) {
-		perror("Error sending identifier in send_struct_client");
-		return -6;
-	}
-	for (int i=0;i<global_format.struct_info[struct_id].num_of_fields;i++) {
-		if (redir->field_remap[struct_id][i] == UINT32_MAX) {
-			return 0;
-		}
-		// TODO: Add serialization (byte order)
-		if (global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].is_ptr == 1) {
+int send_struct_client(int fd, enum structs struct_id, void *src,
+                       struct redir_table_t *redir) {
+  if (struct_id == STRUCT_ANY) {
+    printf("Cannot send unknown struct\n");
+    return -5;
+  }
+  if (redir->struct_remap[struct_id] == UINT32_MAX) {
+    printf("Attempted to send \"masked\" struct %s\n",
+           global_format.struct_info[struct_id].identifier);
+    return -7;
+  }
+  uint32_t size = 0;
+  for (int i = 0; i < global_format.struct_info[struct_id].num_of_fields; i++) {
+    if (redir->field_remap[struct_id][i] == UINT32_MAX) {
+      // no need to continue the loop all the next ones are UINT32_MAX
+      break;
+    }
+    if (global_format.struct_info[struct_id]
+            .field_info[redir->field_remap[struct_id][i]]
+            .is_ptr == 1) {
+      size += 4;
+      size += global_format.struct_info[struct_id]
+                  .field_info[redir->field_remap[struct_id][i]]
+                  .size *
+              (*((uint32_t *)get_field_nmemb(
+                  struct_id, src, redir->field_remap[struct_id][i])));
+    } else {
+      size += global_format.struct_info[struct_id]
+                  .field_info[redir->field_remap[struct_id][i]]
+                  .size;
+    }
+  }
+  size += 4; // identifier
+  size = htonl(size);
+  if (send_data(fd, &size, 4) != 4) {
+    perror("Error sending size in send_struct_client");
+    return -6;
+  }
+  uint32_t identifier = htonl(redir->struct_remap[struct_id]);
+  if (send_data(fd, &identifier, 4) != 4) {
+    perror("Error sending identifier in send_struct_client");
+    return -6;
+  }
+  for (int i = 0; i < global_format.struct_info[struct_id].num_of_fields; i++) {
+    if (redir->field_remap[struct_id][i] == UINT32_MAX) {
+      return 0;
+    }
+    // TODO: Add serialization (byte order)
+    if (global_format.struct_info[struct_id]
+            .field_info[redir->field_remap[struct_id][i]]
+            .is_ptr == 1) {
 
-			byte_swap(get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]),4);
+      byte_swap(
+          get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]), 4);
 
-			if (send_data(fd, get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]), 4) != 4) {
-				printf("Error sending nmemb_field\n");
-				return -6;
-			}
+      if (send_data(
+              fd,
+              get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]),
+              4) != 4) {
+        printf("Error sending nmemb_field\n");
+        return -6;
+      }
 
-			byte_swap(get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]),4);
-			uint32_t nmemb_field = (*((uint32_t*)get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i])));
-			// copy the field so it is mutable
-			uint8_t* ptr_field_mutable = malloc(global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field);
-			if (ptr_field_mutable == NULL) {
-				perror("malloc");
-				return -5;
-			}
-			memcpy(ptr_field_mutable,*((void**)get_field(struct_id, src, redir->field_remap[struct_id][i])), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field);
+      byte_swap(
+          get_field_nmemb(struct_id, src, redir->field_remap[struct_id][i]), 4);
+      uint32_t nmemb_field = (*((uint32_t *)get_field_nmemb(
+          struct_id, src, redir->field_remap[struct_id][i])));
+      // copy the field so it is mutable
+      uint8_t *ptr_field_mutable =
+          malloc(global_format.struct_info[struct_id]
+                     .field_info[redir->field_remap[struct_id][i]]
+                     .size *
+                 nmemb_field);
+      if (ptr_field_mutable == NULL) {
+        perror("malloc");
+        return -5;
+      }
+      memcpy(ptr_field_mutable,
+             *((void **)get_field(struct_id, src,
+                                  redir->field_remap[struct_id][i])),
+             global_format.struct_info[struct_id]
+                     .field_info[redir->field_remap[struct_id][i]]
+                     .size *
+                 nmemb_field);
 
-			for (int j=0;j<nmemb_field;j++) {
-				if (byte_swap(ptr_field_mutable+(j*global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) == 1) {
-					printf("byte_swap_error\n");
-					free(ptr_field_mutable);
-					ptr_field_mutable=NULL;
-					return -5;
-				}
-				
-			}
+      for (int j = 0; j < nmemb_field; j++) {
+        if (byte_swap(ptr_field_mutable +
+                          (j * global_format.struct_info[struct_id]
+                                   .field_info[redir->field_remap[struct_id][i]]
+                                   .size),
+                      global_format.struct_info[struct_id]
+                          .field_info[redir->field_remap[struct_id][i]]
+                          .size) == 1) {
+          printf("byte_swap_error\n");
+          free(ptr_field_mutable);
+          ptr_field_mutable = NULL;
+          return -5;
+        }
+      }
 
-			if (send_data(fd, ptr_field_mutable, global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field) != global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size*nmemb_field) {
-				free(ptr_field_mutable);
-				ptr_field_mutable=NULL;
-				perror("Error sending ptr_field");
-				return -6;
-			}
-			free(ptr_field_mutable);
-			ptr_field_mutable=NULL;
-		} else {
-			byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size);
-			if (send_data(fd, get_field(struct_id, src, redir->field_remap[struct_id][i]), global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) != global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size) {
-				perror("Error sending field");
-				return -6;
-			}
-			byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),global_format.struct_info[struct_id].field_info[redir->field_remap[struct_id][i]].size);
-		}
-		
-	}
-	return 0;
+      if (send_data(fd, ptr_field_mutable,
+                    global_format.struct_info[struct_id]
+                            .field_info[redir->field_remap[struct_id][i]]
+                            .size *
+                        nmemb_field) !=
+          global_format.struct_info[struct_id]
+                  .field_info[redir->field_remap[struct_id][i]]
+                  .size *
+              nmemb_field) {
+        free(ptr_field_mutable);
+        ptr_field_mutable = NULL;
+        perror("Error sending ptr_field");
+        return -6;
+      }
+      free(ptr_field_mutable);
+      ptr_field_mutable = NULL;
+    } else {
+      byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),
+                global_format.struct_info[struct_id]
+                    .field_info[redir->field_remap[struct_id][i]]
+                    .size);
+      if (send_data(
+              fd, get_field(struct_id, src, redir->field_remap[struct_id][i]),
+              global_format.struct_info[struct_id]
+                  .field_info[redir->field_remap[struct_id][i]]
+                  .size) != global_format.struct_info[struct_id]
+                                .field_info[redir->field_remap[struct_id][i]]
+                                .size) {
+        perror("Error sending field");
+        return -6;
+      }
+      byte_swap(get_field(struct_id, src, redir->field_remap[struct_id][i]),
+                global_format.struct_info[struct_id]
+                    .field_info[redir->field_remap[struct_id][i]]
+                    .size);
+    }
+  }
+  return 0;
 }
-int recv_struct_server(int fd,enum structs struct_id,void* dest, struct format_mask_t* mask) {
-	uint32_t size;
-	if (recv_data(fd, &size, 4) != 4) {
-		perror("Error recv size in recv_struct_client");
-		return -6;
-	}
-	size = ntohl(size);
-	uint8_t* data = (uint8_t*) malloc(size);
-	if (data == NULL) {
-		perror("malloc");
-		return -5;
-	}
-	if (recv_data(fd, data, size) != size) {
-		perror("Error recv data in recv_struct_client");
-		free(data);
-		return -6;
-	}
-	uint32_t iter=0;
+int recv_struct_server(int fd, enum structs struct_id, void *dest,
+                       struct format_mask_t *mask) {
+  uint32_t size;
+  if (recv_data(fd, &size, 4) != 4) {
+    perror("Error recv size in recv_struct_client");
+    return -6;
+  }
+  size = ntohl(size);
+  uint8_t *data = (uint8_t *)malloc(size);
+  if (data == NULL) {
+    perror("malloc");
+    return -5;
+  }
+  if (recv_data(fd, data, size) != size) {
+    perror("Error recv data in recv_struct_client");
+    free(data);
+    return -6;
+  }
+  uint32_t iter = 0;
 
-	uint32_t identifier;
-	READ_SAFE_FORMAT(identifier, iter, size, data, free(data);, "packet");
-	identifier = ntohl(identifier);
-	if (identifier >= global_format.num_of_structs) {
-		printf("Wrong identifier in recv_struct_server\n");
-		free(data);
-		return -4;
-	}
-	if (identifier != struct_id && (int32_t)identifier != STRUCT_ANY) {
-		printf("Expected different identifier in recv_struct_server\n");
-		free(data);
-		return -4;
+  uint32_t identifier;
+  READ_SAFE_FORMAT(identifier, iter, size, data, free(data);, "packet");
+  identifier = ntohl(identifier);
+  if (identifier >= global_format.num_of_structs) {
+    printf("Wrong identifier in recv_struct_server\n");
+    free(data);
+    return -4;
+  }
+  if (identifier != struct_id && (int32_t)identifier != STRUCT_ANY) {
+    printf("Expected different identifier in recv_struct_server\n");
+    free(data);
+    return -4;
+  }
+  if (mask->struct_mask[identifier].field_mask == NULL) {
+    printf("Attempted to recv masked struct %s\n",
+           global_format.struct_info[identifier].identifier);
+    free(data);
+    return -7;
+  }
+  for (int i = 0; i < global_format.struct_info[identifier].num_of_fields;
+       i++) {
+    if (mask->struct_mask[identifier].field_mask[i] != 0) {
+      if (global_format.struct_info[identifier].field_info[i].is_ptr == 1) {
+        if (4 > size - iter) {
+          printf("Not enough data received in recv_struct_server\n");
+          free(data);
+          return -4;
+        }
+        memcpy(get_field_nmemb(identifier, dest, i), data + iter, 4);
+        byte_swap(get_field_nmemb(identifier, dest, i), 4);
+        iter += 4;
+        uint32_t nmemb_field =
+            *((uint32_t *)get_field_nmemb(identifier, dest, i));
+        if (global_format.struct_info[identifier].field_info[i].size *
+                nmemb_field >
+            size - iter) {
+          printf("Not enough data received in recv_struct_server\n");
+          free(data);
+          return -4;
+        }
+        uint8_t *buf = (uint8_t *)malloc(
+            global_format.struct_info[identifier].field_info[i].size *
+            nmemb_field);
+        memcpy(buf, data + iter,
+               global_format.struct_info[identifier].field_info[i].size *
+                   nmemb_field);
+        for (int j = 0; j < nmemb_field; j++) {
+          byte_swap(
+              buf +
+                  j * global_format.struct_info[identifier].field_info[i].size,
+              global_format.struct_info[identifier].field_info[i].size);
+        }
 
-	}
-	if (mask->struct_mask[identifier].field_mask == NULL) {
-		printf("Attempted to recv masked struct %s\n", global_format.struct_info[identifier].identifier);
-		free(data);
-		return -7;
-	}
-	for (int i=0;i<global_format.struct_info[identifier].num_of_fields;i++) {
-		if (mask->struct_mask[identifier].field_mask[i] != 0) {
-			if (global_format.struct_info[identifier].field_info[i].is_ptr == 1) {
-				if (4 > size-iter) {
-					printf("Not enough data received in recv_struct_server\n");
-					free(data);
-					return -4;
-				}
-				memcpy(get_field_nmemb(identifier, dest, i), data+iter, 4);
-				byte_swap(get_field_nmemb(identifier, dest, i), 4);
-				iter+=4;
-				uint32_t nmemb_field = *((uint32_t*)get_field_nmemb(identifier,dest,i));
-				if (global_format.struct_info[identifier].field_info[i].size*nmemb_field > size-iter) {
-					printf("Not enough data received in recv_struct_server\n");
-					free(data);
-					return -4;
-				}
-				uint8_t* buf = (uint8_t*)malloc(global_format.struct_info[identifier].field_info[i].size*nmemb_field);
-				memcpy(buf, data+iter, global_format.struct_info[identifier].field_info[i].size*nmemb_field);
-				for (int j=0;j<nmemb_field;j++) {
-					byte_swap(buf+j*global_format.struct_info[identifier].field_info[i].size, global_format.struct_info[identifier].field_info[i].size);
-
-				}
-
-				// set the field ptr 
-				memcpy(get_field(identifier, dest, i), &buf, sizeof(void*));
-				iter+=global_format.struct_info[identifier].field_info[i].size*nmemb_field;
-			} else {
-				if (global_format.struct_info[identifier].field_info[i].size > size-iter) {
-					printf("Not enough data received in recv_struct_server\n");
-					free(data);
-					return -4;
-				}
-				memcpy(get_field(identifier, dest, i), data+iter, global_format.struct_info[identifier].field_info[i].size);
-				byte_swap(get_field(identifier, dest, i), global_format.struct_info[identifier].field_info[i].size);
-				iter +=global_format.struct_info[identifier].field_info[i].size;
-			}
-		}
-	}
-	if (size-iter != 0) {
-		printf("Too much data provided\n");
-		free(data);
-		return -4;
-	}
-	free(data);
-	return 0;
+        // set the field ptr
+        memcpy(get_field(identifier, dest, i), &buf, sizeof(void *));
+        iter += global_format.struct_info[identifier].field_info[i].size *
+                nmemb_field;
+      } else {
+        if (global_format.struct_info[identifier].field_info[i].size >
+            size - iter) {
+          printf("Not enough data received in recv_struct_server\n");
+          free(data);
+          return -4;
+        }
+        memcpy(get_field(identifier, dest, i), data + iter,
+               global_format.struct_info[identifier].field_info[i].size);
+        byte_swap(get_field(identifier, dest, i),
+                  global_format.struct_info[identifier].field_info[i].size);
+        iter += global_format.struct_info[identifier].field_info[i].size;
+      }
+    }
+  }
+  if (size - iter != 0) {
+    printf("Too much data provided\n");
+    free(data);
+    return -4;
+  }
+  free(data);
+  return 0;
 }
 int recv_struct_client(int fd,enum structs struct_id, void* dest, struct redir_table_t* redir) {
 	uint32_t size = 0;

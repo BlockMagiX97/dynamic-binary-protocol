@@ -13,10 +13,13 @@ int main(int argc, char**argv) {
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = INADDR_ANY;
 	serveraddr.sin_port = htons(PORT);
-	connect(sockfd, &serveraddr, sizeof(serveraddr));
+	connect(sockfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr));
 
 
-	generate_global_format();
+	if (generate_global_format() != 0) {
+		 printf("Error generating global format\n");
+		return 1;
+	}
 	send_format_to_server(sockfd);
 	
 	struct format_mask_t* mask = malloc_mask();
